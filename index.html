@@ -13,7 +13,7 @@
 <!--
   菜價計算機 —— 給媽媽在 iPad 上用的每日菜價結算工具
   ‧ 單一 HTML 檔、零外部相依,完全離線可用
-  ‧ 資料存在 localStorage(keys: vpc_items / vpc_cats / vpc_bill / vpc_storeName)
+  ‧ 資料存在 localStorage(keys: vpc_items / vpc_cats / vpc_bill / vpc_customers / vpc_storeName)
     在 Claude 預覽沙盒中 localStorage 被擋,會自動改用記憶體(重新整理就消失);
     放到 iPad 用 Safari / Documents by Readdle 開啟後即可永久保存。
 -->
@@ -63,6 +63,29 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
 .head-row input{flex:1;border:none;outline:none;font-size:19px;background:transparent;min-width:0}
 #prevDueInput{text-align:right;font-weight:800;color:var(--danger);font-variant-numeric:tabular-nums}
 .head-unit{color:var(--sub);font-size:17px;font-weight:800}
+
+/* ── 客戶下拉選單 ── */
+.cust-row{position:relative}
+.cust-dd{position:absolute;top:calc(100% + 2px);left:0;right:0;background:#fff;
+  border:1.5px solid var(--line);border-radius:14px;
+  box-shadow:0 10px 26px rgba(40,60,40,.20);z-index:30;max-height:280px;overflow-y:auto}
+.cust-opt{display:flex;align-items:center;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line)}
+.cust-opt:last-child{border-bottom:none}
+.cust-opt:active{background:var(--soft)}
+.co-name{font-size:18px;font-weight:800;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.co-meta{font-size:14px;color:var(--sub);white-space:nowrap;font-variant-numeric:tabular-nums}
+.co-meta.owe{color:var(--danger);font-weight:800}
+.co-del{width:34px;height:34px;border-radius:50%;background:#f6ebe6;color:var(--danger);
+  font-size:14px;font-weight:800;flex:none}
+
+/* ── 結清詢問 ── */
+.settle-pay{margin:-4px 0 18px}
+.settle-lab{font-size:17px;font-weight:800;color:var(--sub);white-space:nowrap;align-self:center}
+#settlePayInput{text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+.settle-remain{text-align:center;margin-top:12px;font-size:17px;font-weight:800;
+  color:var(--danger);font-variant-numeric:tabular-nums}
+.settle-editlink{display:block;margin:-8px auto 16px;padding:8px 16px;font-size:15px;
+  font-weight:800;color:var(--green-deep);background:var(--soft);border-radius:999px}
 
 .bill-list{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
 .empty{text-align:center;color:var(--sub);padding:42px 10px;font-size:19px;line-height:1.9;
@@ -206,9 +229,10 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
   <!-- ═══ 結算頁 ═══ -->
   <main class="page" id="page-bill">
     <div class="bill-head">
-      <div class="head-row">
+      <div class="head-row cust-row">
         <label>客戶</label>
-        <input id="customerInput" type="text" placeholder="可不填,例如:王老闆">
+        <input id="customerInput" type="text" placeholder="可不填,例如:王老闆" autocomplete="off">
+        <div class="cust-dd hidden" id="custDd"></div>
       </div>
       <div class="head-row">
         <label>上次未結清</label>
@@ -363,6 +387,42 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
   </div>
 </div>
 
+<!-- ═══ 結清詢問 ═══ -->
+<div class="overlay center hidden" id="ovSettle">
+  <div class="dialog">
+    <div class="dlg-msg" id="settleMsg"></div>
+    <button class="settle-editlink hidden" id="settleEditBtn">✎ 上次金額有誤?點此修改</button>
+    <div class="settle-pay hidden" id="settleEditBox">
+      <div class="row">
+        <span class="settle-lab">改為</span>
+        <input id="settleEditInput" class="f-input grow" type="text" inputmode="decimal">
+        <span class="settle-lab">元</span>
+      </div>
+    </div>
+    <div class="settle-pay hidden" id="settlePayBox">
+      <div class="row">
+        <span class="settle-lab">這次收了</span>
+        <input id="settlePayInput" class="f-input grow" type="text" inputmode="decimal" placeholder="0">
+        <span class="settle-lab">元</span>
+      </div>
+      <div class="settle-remain" id="settleRemain"></div>
+    </div>
+    <div class="dlg-actions" id="settleActions1">
+      <button class="btn ghost" id="settleSkip">略過</button>
+      <button class="btn primary" id="settlePaid">已結清</button>
+      <button class="btn danger" id="settleNot">還沒結清</button>
+    </div>
+    <div class="dlg-actions hidden" id="settleActions2">
+      <button class="btn ghost big" id="settleBack">返回</button>
+      <button class="btn primary big" id="settleApply">帶入未結清</button>
+    </div>
+    <div class="dlg-actions hidden" id="settleActions3">
+      <button class="btn ghost big" id="settleEditBack">返回</button>
+      <button class="btn primary big" id="settleEditSave">儲存修正</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -407,10 +467,13 @@ let bill=store.get('vpc_bill');
 if(!bill||!Array.isArray(bill.lines))bill={customer:'',lines:[],prevDue:0};
 if(typeof bill.prevDue!=='number'||!(bill.prevDue>0))bill.prevDue=0;
 let storeName=store.get('vpc_storeName')||'';
+let customers=store.get('vpc_customers');
+if(!Array.isArray(customers))customers=[];
 
 const saveItems=()=>store.set('vpc_items',items);
 const saveCats=()=>store.set('vpc_cats',cats);
 const saveBill=()=>store.set('vpc_bill',bill);
+const saveCustomers=()=>store.set('vpc_customers',customers);
 
 /* ───────── 小工具 ───────── */
 const $=s=>document.querySelector(s);
@@ -492,7 +555,150 @@ $('#billList').addEventListener('click',e=>{
   if(row)openEntry({mode:'edit',index:+row.dataset.i});
 });
 
-$('#customerInput').addEventListener('input',e=>{bill.customer=e.target.value;saveBill();});
+/* ── 客戶記憶:下拉選單 + 上次金額 ── */
+$('#customerInput').addEventListener('input',e=>{bill.customer=e.target.value;saveBill();renderCustDd();});
+$('#customerInput').addEventListener('focus',renderCustDd);
+
+const custDd=$('#custDd');
+function findCustomer(name){return customers.find(c=>c.name===name);}
+function upsertCustomer(name,total){
+  name=String(name).trim();if(!name)return;
+  const d=new Date();
+  const dateStr=d.getFullYear()+'/'+pad2(d.getMonth()+1)+'/'+pad2(d.getDate());
+  const c=findCustomer(name);
+  if(c){c.lastTotal=total;c.lastDate=dateStr;}
+  else customers.push({name:name,lastTotal:total,lastDate:dateStr});
+  customers.sort((a,b)=>String(b.lastDate||'').localeCompare(String(a.lastDate||'')));
+  if(customers.length>100)customers.length=100;
+  saveCustomers();
+}
+function renderCustDd(){
+  const q=$('#customerInput').value.trim();
+  const list=customers.filter(c=>!q||c.name.includes(q));
+  if(!list.length){custDd.classList.add('hidden');return;}
+  custDd.innerHTML=list.map(c=>
+    '<div class="cust-opt" data-name="'+esc(c.name)+'">'+
+      '<span class="co-name">'+esc(c.name)+'</span>'+
+      (c.lastTotal>0?'<span class="co-meta owe">上次 '+fmt(c.lastTotal)+' 元</span>':'')+
+      (c.lastDate?'<span class="co-meta">'+esc(String(c.lastDate).slice(5))+'</span>':'')+
+      '<button class="co-del" data-delcust="'+esc(c.name)+'">✕</button>'+
+    '</div>'
+  ).join('');
+  custDd.classList.remove('hidden');
+}
+document.addEventListener('pointerdown',e=>{
+  if(!custDd.classList.contains('hidden')&&!e.target.closest('.cust-row'))custDd.classList.add('hidden');
+});
+custDd.addEventListener('click',async e=>{
+  const del=e.target.closest('[data-delcust]');
+  if(del){
+    const nm=del.dataset.delcust;
+    custDd.classList.add('hidden');
+    const ok=await askConfirm('刪除客戶「'+nm+'」的記錄?\n(不影響已開的結算單)');
+    if(ok){customers=customers.filter(c=>c.name!==nm);saveCustomers();toast('已刪除');}
+    return;
+  }
+  const opt=e.target.closest('[data-name]');
+  if(!opt)return;
+  const nm=opt.dataset.name;
+  $('#customerInput').value=nm;
+  bill.customer=nm;saveBill();
+  custDd.classList.add('hidden');
+  const c=findCustomer(nm);
+  if(c&&c.lastTotal>0)openSettle(c);
+});
+
+/* ── 結清詢問 ── */
+let settleCust=null;
+function setPrevDue(v){
+  bill.prevDue=v;
+  $('#prevDueInput').value=v>0?trimNum(v):'';
+  renderBill();
+}
+function openSettle(c){
+  settleCust=c;
+  $('#settleMsg').textContent=c.name+'\n上次結算('+(c.lastDate||'')+')共 '+fmt(c.lastTotal)+' 元\n結清了嗎?';
+  $('#settleEditBtn').classList.remove('hidden');
+  $('#settleEditBox').classList.add('hidden');
+  $('#settlePayBox').classList.add('hidden');
+  $('#settleActions1').classList.remove('hidden');
+  $('#settleActions2').classList.add('hidden');
+  $('#settleActions3').classList.add('hidden');
+  $('#settlePayInput').value='';
+  $('#ovSettle').classList.remove('hidden');
+}
+function settleRemainVal(){
+  const paid=parseFloat($('#settlePayInput').value)||0;
+  return Math.max(0,Math.round(settleCust.lastTotal-paid));
+}
+function updateSettleRemain(){
+  $('#settleRemain').textContent='將帶入未結清:'+fmt(settleRemainVal())+' 元';
+}
+$('#settleSkip').addEventListener('click',()=>{$('#ovSettle').classList.add('hidden');settleCust=null;});
+$('#settlePaid').addEventListener('click',()=>{
+  if(!settleCust)return;
+  setPrevDue(0);
+  $('#ovSettle').classList.add('hidden');settleCust=null;
+  toast('已結清,未結清 0 元');
+});
+$('#settleNot').addEventListener('click',()=>{
+  if(!settleCust)return;
+  $('#settleMsg').textContent=settleCust.name+'\n上次共 '+fmt(settleCust.lastTotal)+' 元,這次收了多少?';
+  $('#settleEditBtn').classList.add('hidden');
+  $('#settlePayBox').classList.remove('hidden');
+  $('#settleActions1').classList.add('hidden');
+  $('#settleActions2').classList.remove('hidden');
+  updateSettleRemain();
+  setTimeout(()=>$('#settlePayInput').focus(),100);
+});
+$('#settleBack').addEventListener('click',()=>{if(settleCust)openSettle(settleCust);});
+$('#settlePayInput').addEventListener('input',e=>{
+  let v=e.target.value.replace(/[^\d.]/g,'');
+  const parts=v.split('.');
+  if(parts.length>2)v=parts[0]+'.'+parts.slice(1).join('');
+  if(v!==e.target.value)e.target.value=v;
+  if(settleCust)updateSettleRemain();
+});
+$('#settleApply').addEventListener('click',()=>{
+  if(!settleCust)return;
+  const v=settleRemainVal();
+  setPrevDue(v);
+  $('#ovSettle').classList.add('hidden');settleCust=null;
+  toast('已帶入未結清 '+fmt(v)+' 元');
+});
+
+/* ── 修正記憶中的上次金額 ── */
+$('#settleEditBtn').addEventListener('click',()=>{
+  if(!settleCust)return;
+  $('#settleMsg').textContent=settleCust.name+'\n修改上次金額';
+  $('#settleEditBtn').classList.add('hidden');
+  $('#settlePayBox').classList.add('hidden');
+  $('#settleEditBox').classList.remove('hidden');
+  $('#settleActions1').classList.add('hidden');
+  $('#settleActions2').classList.add('hidden');
+  $('#settleActions3').classList.remove('hidden');
+  $('#settleEditInput').value=trimNum(settleCust.lastTotal);
+  setTimeout(()=>{const el=$('#settleEditInput');el.focus();if(el.select)el.select();},100);
+});
+$('#settleEditBack').addEventListener('click',()=>{if(settleCust)openSettle(settleCust);});
+$('#settleEditInput').addEventListener('input',e=>{
+  let v=e.target.value.replace(/[^\d.]/g,'');
+  const parts=v.split('.');
+  if(parts.length>2)v=parts[0]+'.'+parts.slice(1).join('');
+  if(v!==e.target.value)e.target.value=v;
+});
+$('#settleEditSave').addEventListener('click',()=>{
+  if(!settleCust)return;
+  const v=Math.max(0,Math.round(parseFloat($('#settleEditInput').value)||0));
+  settleCust.lastTotal=v;
+  saveCustomers();
+  toast('已更正為 '+fmt(v)+' 元');
+  if(v>0){
+    openSettle(settleCust);
+  }else{
+    $('#ovSettle').classList.add('hidden');settleCust=null;
+  }
+});
 
 $('#prevDueInput').addEventListener('input',e=>{
   let v=e.target.value.replace(/[^\d.]/g,'');
@@ -836,6 +1042,8 @@ function drawReceipt(){
 let exportBlob=null,exportUrl=null,exportName='';
 $('#btnExport').addEventListener('click',()=>{
   if(!bill.lines.length)return;
+  const grand=bill.lines.reduce((s,l)=>s+lineSubtotal(l),0)+Math.max(0,Math.round(bill.prevDue||0));
+  if((bill.customer||'').trim())upsertCustomer(bill.customer,grand);
   const cv=drawReceipt();
   cv.toBlob(blob=>{
     if(!blob){toast('圖片產生失敗');return;}
