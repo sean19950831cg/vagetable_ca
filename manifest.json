@@ -1,0 +1,17 @@
+{
+  "name": "菜價計算機",
+  "short_name": "菜價計算機",
+  "description": "每日菜價結算單,離線可用",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "zh-Hant",
+  "background_color": "#eef2e9",
+  "theme_color": "#1e5a37",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

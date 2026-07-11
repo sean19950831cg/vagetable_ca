@@ -1,0 +1,26 @@
+菜價計算機 PWA 部署步驟(GitHub Pages)
+════════════════════════════════════════
+
+【上線】
+1. 在 GitHub 建一個 public repo(例如:vege-price)
+2. 把這個資料夾裡的「所有檔案」上傳到 repo 根目錄:
+   index.html / manifest.json / sw.js / icon-180.png / icon-192.png / icon-512.png
+3. Repo → Settings → Pages → Source 選「Deploy from a branch」→ main /(root)→ Save
+4. 等 1~2 分鐘,網址就是:
+   https://你的帳號.github.io/vege-price/
+
+【裝到媽媽的 iPad】
+5. 用 Safari 打開上面網址(第一次要有網路)
+6. 按「分享」→「加入主畫面」→ 完成
+   → 主畫面會出現綠色「菜」icon,點開是全螢幕、之後完全離線可用
+
+【日後更新】
+改好 index.html 後 push 到 repo 即可。
+媽媽下次「有網路時」打開 app 就會自動載入新版(離線時繼續用舊版)。
+若改了 icon 或 manifest,把 sw.js 裡的 CACHE 版本號 'vpc-v1' 改成 'vpc-v2' 一起 push。
+
+【注意】
+‧ 品項、分類、未結清、結算單草稿都存在 iPad 這個主畫面 app 的 localStorage,
+  不會上傳到任何伺服器。
+‧ 刪除主畫面 icon = 刪除所有資料,請提醒媽媽不要隨意刪。
+‧ 加入主畫面的 PWA 不受 Safari 七天未使用清除資料的限制,天天用更沒問題。
