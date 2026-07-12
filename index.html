@@ -101,6 +101,8 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
 .btn-add-line{width:100%;padding:18px;border:2.5px dashed var(--green);border-radius:var(--radius);
   color:var(--green-deep);font-size:21px;font-weight:800;background:var(--soft)}
 .btn-add-line:active{background:#d3e7d7}
+.past-banner{background:#fdf3d7;border:1.5px solid #e8cf8a;color:#7a5a12;border-radius:14px;
+  padding:10px 14px;font-size:15px;font-weight:800;margin-bottom:12px;text-align:center}
 
 /* ── 合計列(簽名元素:像收銀機顯示屏) ── */
 .totalbar{position:fixed;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));z-index:19;
@@ -240,6 +242,7 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
         <span class="head-unit">元</span>
       </div>
     </div>
+    <div class="past-banner hidden" id="pastBanner"></div>
     <div class="bill-list" id="billList"></div>
     <button class="btn-add-line" id="btnAddLine">＋ 新增品項</button>
   </main>
@@ -399,6 +402,7 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
         <span class="settle-lab">元</span>
       </div>
     </div>
+    <button class="btn ghost big full hidden" id="settleLoadBill" style="margin-bottom:14px">開啟上次的單,修改品項數量</button>
     <div class="settle-pay hidden" id="settlePayBox">
       <div class="row">
         <span class="settle-lab">這次收了</span>
@@ -486,6 +490,7 @@ function todayStr(){
   const d=new Date();const w='日一二三四五六'[d.getDay()];
   return d.getFullYear()+'/'+pad2(d.getMonth()+1)+'/'+pad2(d.getDate())+'(週'+w+')';
 }
+function billDateStr(){return bill.billDate?bill.billDate:todayStr();}
 function lineSubtotal(l){return Math.round(l.price*l.qty);}
 
 let toastTimer=null;
@@ -519,6 +524,13 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
 
 /* ───────── 結算頁 ───────── */
 function renderBill(){
+  const pb=$('#pastBanner');
+  if(bill.billDate&&bill.billDate!==todayStr()){
+    pb.textContent='正在修改 '+String(bill.billDate).slice(0,10)+' 的結算單,匯出後按「清空」回到今天';
+    pb.classList.remove('hidden');
+  }else{
+    pb.classList.add('hidden');
+  }
   const list=$('#billList');
   if(!bill.lines.length){
     list.innerHTML='<div class="empty">今天還沒有品項<br>按下面「＋ 新增品項」開始結算</div>';
@@ -550,7 +562,7 @@ function renderBill(){
 
 $('#billList').addEventListener('click',e=>{
   const del=e.target.closest('[data-del]');
-  if(del){bill.lines.splice(+del.dataset.del,1);renderBill();return;}
+  if(del){bill.lines.splice(+del.dataset.del,1);bill.exported=false;renderBill();return;}
   const row=e.target.closest('.bill-line');
   if(row)openEntry({mode:'edit',index:+row.dataset.i});
 });
@@ -561,13 +573,14 @@ $('#customerInput').addEventListener('focus',renderCustDd);
 
 const custDd=$('#custDd');
 function findCustomer(name){return customers.find(c=>c.name===name);}
-function upsertCustomer(name,total){
+function upsertCustomer(name,total,snapshot){
   name=String(name).trim();if(!name)return;
-  const d=new Date();
-  const dateStr=d.getFullYear()+'/'+pad2(d.getMonth()+1)+'/'+pad2(d.getDate());
+  let dateStr;
+  if(snapshot&&snapshot.date){dateStr=String(snapshot.date).slice(0,10);}
+  else{const d=new Date();dateStr=d.getFullYear()+'/'+pad2(d.getMonth()+1)+'/'+pad2(d.getDate());}
   const c=findCustomer(name);
-  if(c){c.lastTotal=total;c.lastDate=dateStr;}
-  else customers.push({name:name,lastTotal:total,lastDate:dateStr});
+  if(c){c.lastTotal=total;c.lastDate=dateStr;if(snapshot)c.lastBill=snapshot;}
+  else customers.push({name:name,lastTotal:total,lastDate:dateStr,lastBill:snapshot||null});
   customers.sort((a,b)=>String(b.lastDate||'').localeCompare(String(a.lastDate||'')));
   if(customers.length>100)customers.length=100;
   saveCustomers();
@@ -601,9 +614,27 @@ custDd.addEventListener('click',async e=>{
   const opt=e.target.closest('[data-name]');
   if(!opt)return;
   const nm=opt.dataset.name;
-  $('#customerInput').value=nm;
-  bill.customer=nm;saveBill();
   custDd.classList.add('hidden');
+  if(bill.lines.length){
+    let wipe=true;
+    if(!bill.exported){
+      wipe=await askConfirm('目前的 '+bill.lines.length+' 筆品項還沒匯出,\n要清掉,幫「'+nm+'」開新的一張單嗎?');
+    }
+    if(wipe){
+      bill={customer:nm,lines:[],prevDue:0};
+      $('#prevDueInput').value='';
+    }else{
+      bill.customer=nm;
+    }
+  }else{
+    bill.customer=nm;
+    bill.prevDue=0;
+    $('#prevDueInput').value='';
+    delete bill.billDate;
+  }
+  $('#customerInput').value=nm;
+  saveBill();
+  renderBill();
   const c=findCustomer(nm);
   if(c&&c.lastTotal>0)openSettle(c);
 });
@@ -620,6 +651,7 @@ function openSettle(c){
   $('#settleMsg').textContent=c.name+'\n上次結算('+(c.lastDate||'')+')共 '+fmt(c.lastTotal)+' 元\n結清了嗎?';
   $('#settleEditBtn').classList.remove('hidden');
   $('#settleEditBox').classList.add('hidden');
+  $('#settleLoadBill').classList.add('hidden');
   $('#settlePayBox').classList.add('hidden');
   $('#settleActions1').classList.remove('hidden');
   $('#settleActions2').classList.add('hidden');
@@ -674,6 +706,8 @@ $('#settleEditBtn').addEventListener('click',()=>{
   $('#settleEditBtn').classList.add('hidden');
   $('#settlePayBox').classList.add('hidden');
   $('#settleEditBox').classList.remove('hidden');
+  const hasBill=!!(settleCust.lastBill&&settleCust.lastBill.lines&&settleCust.lastBill.lines.length);
+  $('#settleLoadBill').classList.toggle('hidden',!hasBill);
   $('#settleActions1').classList.add('hidden');
   $('#settleActions2').classList.add('hidden');
   $('#settleActions3').classList.remove('hidden');
@@ -698,6 +732,30 @@ $('#settleEditSave').addEventListener('click',()=>{
   }else{
     $('#ovSettle').classList.add('hidden');settleCust=null;
   }
+});
+
+/* ── 載回上次那張單重新修改 ── */
+$('#settleLoadBill').addEventListener('click',async()=>{
+  if(!settleCust||!settleCust.lastBill)return;
+  const cust=settleCust;
+  const snap=cust.lastBill;
+  $('#ovSettle').classList.add('hidden');
+  settleCust=null;
+  if(bill.lines.length){
+    const ok=await askConfirm('目前結算單已有 '+bill.lines.length+' 筆品項,\n載入上次的單會取代它們,確定?');
+    if(!ok)return;
+  }
+  bill={
+    customer:cust.name,
+    lines:JSON.parse(JSON.stringify(snap.lines||[])),
+    prevDue:(typeof snap.prevDue==='number'&&snap.prevDue>0)?snap.prevDue:0,
+    billDate:snap.date||null
+  };
+  $('#customerInput').value=bill.customer;
+  $('#prevDueInput').value=bill.prevDue>0?trimNum(bill.prevDue):'';
+  renderBill();
+  const dlabel=snap.date?String(snap.date).slice(0,10):'';
+  toast(dlabel?'已載入 '+dlabel+' 的單,改好請重新匯出':'已載入上次的單,改好請重新匯出');
 });
 
 $('#prevDueInput').addEventListener('input',e=>{
@@ -833,6 +891,7 @@ $('#entryOk').addEventListener('click',()=>{
     const it=items.find(i=>i.id===entry.itemId);
     if(it){it.lastPrice=price;saveItems();}
   }
+  bill.exported=false;
   renderBill();
   closeEntry();
   toast(wasEdit?'已更新':'已加入 '+name);
@@ -977,7 +1036,7 @@ function drawReceipt(){
       if(ctx){ctx.fillStyle='#6f7e6c';ctx.font='700 22px '+F;ctx.fillText('菜 價 結 算 單',W/2,y);}
       y+=36;
     }
-    if(ctx){ctx.fillStyle='#6f7e6c';ctx.font='500 24px '+F;ctx.fillText(todayStr(),W/2,y);}
+    if(ctx){ctx.fillStyle='#6f7e6c';ctx.font='500 24px '+F;ctx.fillText(billDateStr(),W/2,y);}
     y+=30;
     if(cust){
       y+=20;
@@ -1043,16 +1102,23 @@ let exportBlob=null,exportUrl=null,exportName='';
 $('#btnExport').addEventListener('click',()=>{
   if(!bill.lines.length)return;
   const grand=bill.lines.reduce((s,l)=>s+lineSubtotal(l),0)+Math.max(0,Math.round(bill.prevDue||0));
-  if((bill.customer||'').trim())upsertCustomer(bill.customer,grand);
+  if((bill.customer||'').trim()){
+    upsertCustomer(bill.customer,grand,{
+      lines:JSON.parse(JSON.stringify(bill.lines)),
+      prevDue:Math.max(0,Math.round(bill.prevDue||0)),
+      date:billDateStr()
+    });
+  }
+  bill.exported=true;saveBill();
   const cv=drawReceipt();
   cv.toBlob(blob=>{
     if(!blob){toast('圖片產生失敗');return;}
     if(exportUrl)URL.revokeObjectURL(exportUrl);
     exportBlob=blob;
     exportUrl=URL.createObjectURL(blob);
-    const d=new Date();
     const cust=(bill.customer||'').trim();
-    exportName='菜價單_'+d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+(cust?'_'+cust:'')+'.png';
+    const dpart=billDateStr().slice(0,10).replace(/\//g,'-');
+    exportName='菜價單_'+dpart+(cust?'_'+cust:'')+'.png';
     $('#exportImg').src=exportUrl;
     $('#ovExport').classList.remove('hidden');
   },'image/png');
