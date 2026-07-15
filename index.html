@@ -92,6 +92,11 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
   background:var(--card);border-radius:var(--radius);border:2px dashed var(--line)}
 .bill-line{display:flex;align-items:center;gap:12px;background:var(--card);
   border-radius:var(--radius);padding:14px 14px 14px 18px;box-shadow:var(--shadow)}
+.bl-no{width:34px;height:34px;border-radius:50%;background:var(--soft);color:var(--green-deep);
+  font-size:16px;font-weight:800;flex:none;display:flex;align-items:center;justify-content:center;
+  font-variant-numeric:tabular-nums}
+.bill-count{text-align:center;color:var(--sub);font-size:16px;font-weight:800;
+  margin:2px 0 12px;font-variant-numeric:tabular-nums}
 .bl-main{flex:1;min-width:0}
 .bl-name{font-size:21px;font-weight:800}
 .bl-detail{font-size:16px;color:var(--sub);margin-top:3px;font-variant-numeric:tabular-nums}
@@ -103,6 +108,9 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
 .btn-add-line:active{background:#d3e7d7}
 .past-banner{background:#fdf3d7;border:1.5px solid #e8cf8a;color:#7a5a12;border-radius:14px;
   padding:10px 14px;font-size:15px;font-weight:800;margin-bottom:12px;text-align:center}
+.reuse-btn{width:100%;padding:14px;border-radius:14px;background:var(--soft);
+  border:2px solid var(--green);color:var(--green-deep);font-size:18px;font-weight:800;margin-bottom:12px}
+.reuse-btn:active{background:#d3e7d7}
 
 /* ── 合計列(簽名元素:像收銀機顯示屏) ── */
 .totalbar{position:fixed;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));z-index:19;
@@ -243,6 +251,7 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
       </div>
     </div>
     <div class="past-banner hidden" id="pastBanner"></div>
+    <button class="reuse-btn hidden" id="btnReuse"></button>
     <div class="bill-list" id="billList"></div>
     <button class="btn-add-line" id="btnAddLine">＋ 新增品項</button>
   </main>
@@ -541,11 +550,21 @@ function renderBill(){
     pb.classList.add('hidden');
   }
   const list=$('#billList');
+  const rb=$('#btnReuse');
+  const rc=findCustomer((bill.customer||'').trim());
+  const rlines=(rc&&rc.lastBill&&rc.lastBill.lines)?rc.lastBill.lines:null;
+  if(!bill.lines.length&&rlines&&rlines.length&&!bill.billDate){
+    rb.textContent='↻ 帶入上次品項('+rlines.length+' 筆),再改價格';
+    rb.classList.remove('hidden');
+  }else{
+    rb.classList.add('hidden');
+  }
   if(!bill.lines.length){
     list.innerHTML='<div class="empty">今天還沒有品項<br>按下面「＋ 新增品項」開始結算</div>';
   }else{
     list.innerHTML=bill.lines.map((l,i)=>
       '<div class="bill-line" data-i="'+i+'">'+
+        '<div class="bl-no">'+(i+1)+'</div>'+
         '<div class="bl-main">'+
           '<div class="bl-name">'+esc(l.name)+'</div>'+
           '<div class="bl-detail">'+trimNum(l.price)+' 元 × '+trimNum(l.qty)+' '+esc(l.unit)+'</div>'+
@@ -553,7 +572,7 @@ function renderBill(){
         '<div class="bl-sub">'+fmt(lineSubtotal(l))+' 元</div>'+
         '<button class="bl-del" data-del="'+i+'">✕</button>'+
       '</div>'
-    ).join('');
+    ).join('')+'<div class="bill-count">共 '+bill.lines.length+' 項</div>';
   }
   const sub=bill.lines.reduce((s,l)=>s+lineSubtotal(l),0);
   const due=Math.round(bill.prevDue||0);
@@ -568,6 +587,24 @@ function renderBill(){
   $('#btnExport').disabled=!bill.lines.length;
   saveBill();
 }
+
+$('#btnReuse').addEventListener('click',()=>{
+  const c=findCustomer((bill.customer||'').trim());
+  if(!c||!c.lastBill||!c.lastBill.lines)return;
+  bill.lines=c.lastBill.lines.map(l=>{
+    const it=l.itemId?items.find(i=>i.id===l.itemId):null;
+    return {
+      itemId:l.itemId||null,
+      name:l.name,
+      unit:l.unit,
+      price:(it&&it.lastPrice!=null)?it.lastPrice:l.price,
+      qty:l.qty
+    };
+  });
+  bill.exported=false;
+  renderBill();
+  toast('已帶入 '+bill.lines.length+' 筆,請確認價格');
+});
 
 $('#billList').addEventListener('click',e=>{
   const del=e.target.closest('[data-del]');
@@ -1057,11 +1094,11 @@ function drawReceipt(){
     y+=48;
     rows.forEach((r,idx)=>{
       if(ctx){
-        ctx.fillStyle='#22301f';ctx.textAlign='left';ctx.font='800 28px '+F;ctx.fillText(r.name,P,y);
+        ctx.fillStyle='#22301f';ctx.textAlign='left';ctx.font='800 28px '+F;ctx.fillText((idx+1)+'. '+r.name,P,y);
         ctx.textAlign='right';ctx.fillText(fmt(r.sub)+' 元',W-P,y);
       }
       y+=34;
-      if(ctx){ctx.fillStyle='#8a978a';ctx.textAlign='left';ctx.font='500 22px '+F;ctx.fillText(r.detail,P,y);}
+      if(ctx){ctx.fillStyle='#8a978a';ctx.textAlign='left';ctx.font='500 22px '+F;ctx.fillText('　　'+r.detail,P,y);}
       y+=18;
       if(idx<rows.length-1){
         if(ctx){ctx.strokeStyle='#e8ebe0';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(P,y);ctx.lineTo(W-P,y);ctx.stroke();}
@@ -1088,6 +1125,7 @@ function drawReceipt(){
     y+=56;
     if(ctx){
       ctx.fillStyle='#22301f';ctx.textAlign='left';ctx.font='800 30px '+F;ctx.fillText('合計',P,y);
+      ctx.fillStyle='#8a978a';ctx.font='500 22px '+F;ctx.fillText('  (共 '+rows.length+' 項)',P+ctx.measureText('合計').width+8,y);
       ctx.fillStyle='#1e5a37';ctx.textAlign='right';ctx.font='900 46px '+F;ctx.fillText('NT$ '+fmt(total),W-P,y);
     }
     y+=56;
