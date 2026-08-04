@@ -51,7 +51,7 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
 .brand{font-size:22px;font-weight:800;letter-spacing:2px}
 .today{font-size:16px;opacity:.92;font-variant-numeric:tabular-nums}
 
-.page{flex:1;padding:16px 16px 230px}
+.page{flex:1;padding:16px 16px var(--pad-bottom,300px)}
 #page-items{padding-bottom:110px}
 
 /* ── 結算頁 ── */
@@ -537,10 +537,18 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
   $('#page-items').classList.toggle('hidden',p!=='items');
   $('#totalbar').classList.toggle('hidden',p!=='bill');
   if(p==='items')renderItemsPage();
+  syncBottomPad();
   window.scrollTo(0,0);
 }));
 
 /* ───────── 結算頁 ───────── */
+/* 底部固定列(合計列+分頁列)高度會隨內容變動,動態量測避免擋住「新增品項」按鈕 */
+function syncBottomPad(){
+  const tb=$('#totalbar'),tabs=document.querySelector('.tabs');
+  const h=(tb&&!tb.classList.contains('hidden')?tb.offsetHeight:0)+(tabs?tabs.offsetHeight:64)+28;
+  document.documentElement.style.setProperty('--pad-bottom',h+'px');
+}
+
 function renderBill(){
   const pb=$('#pastBanner');
   if(bill.billDate&&bill.billDate!==todayStr()){
@@ -586,6 +594,7 @@ function renderBill(){
   }
   $('#btnExport').disabled=!bill.lines.length;
   saveBill();
+  syncBottomPad();
 }
 
 $('#btnReuse').addEventListener('click',()=>{
@@ -941,6 +950,11 @@ $('#entryOk').addEventListener('click',()=>{
   renderBill();
   closeEntry();
   toast(wasEdit?'已更新':'已加入 '+name);
+  if(!wasEdit){
+    setTimeout(()=>{
+      try{$('#btnAddLine').scrollIntoView({behavior:'smooth',block:'end'});}catch(e){}
+    },80);
+  }
 });
 
 /* ───────── 品項管理 ───────── */
@@ -1197,6 +1211,12 @@ $('#todayLabel').textContent=todayStr();
 $('#customerInput').value=bill.customer||'';
 if(bill.prevDue>0)$('#prevDueInput').value=trimNum(bill.prevDue);
 renderBill();
+syncBottomPad();
+window.addEventListener('resize',syncBottomPad);
+window.addEventListener('orientationchange',()=>setTimeout(syncBottomPad,250));
+if(window.ResizeObserver){
+  try{new ResizeObserver(syncBottomPad).observe($('#totalbar'));}catch(e){}
+}
 
 /* ── PWA:註冊離線快取(file://、沙盒等非 HTTPS 環境會安靜跳過) ── */
 if('serviceWorker' in navigator){

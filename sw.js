@@ -2,7 +2,7 @@
    ‧ index.html 走「網路優先」→ 有網路時自動拿到新版,離線退回快取
    ‧ 其他資源走「快取優先」→ 完全離線可用
    ‧ 更新 app 時把下面 CACHE 版本號 +1 可強制全部重抓 */
-const CACHE = 'vpc-v1';
+const CACHE = 'vpc-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -31,7 +31,6 @@ self.addEventListener('fetch', e => {
   const isPage = e.request.mode === 'navigate' || e.request.url.endsWith('index.html');
 
   if (isPage) {
-    // 網路優先:上線時自動更新
     e.respondWith(
       fetch(e.request)
         .then(res => {
@@ -44,7 +43,6 @@ self.addEventListener('fetch', e => {
         )
     );
   } else {
-    // 快取優先:離線可用
     e.respondWith(
       caches.match(e.request).then(hit =>
         hit ||
