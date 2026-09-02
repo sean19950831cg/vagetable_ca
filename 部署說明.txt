@@ -15,8 +15,8 @@
 
 【日後更新】
 改好 index.html 後 push 即可,媽媽有網路時開 app 會自動更新。
-若改了 icon 或 manifest,把 sw.js 裡的 CACHE 版本號 'vpc-v2' 往上加一號再 push。
+若改了 icon 或 manifest,把 sw.js 裡的 CACHE 版本號 'vpc-v3' 往上加一號再 push。
 
 【注意】
-‧ 品項、分類、客戶記憶、未結清都存在 iPad 這個主畫面 app 裡,不會上傳任何伺服器。
+‧ 品項、分類、單位、客戶記憶、未結清都存在 iPad 這個主畫面 app 裡,不會上傳伺服器。
 ‧ 刪除主畫面 icon = 刪除所有資料,請提醒媽媽不要隨意刪。

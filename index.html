@@ -267,6 +267,14 @@ button{font-family:inherit;border:none;background:none;cursor:pointer;color:inhe
       </div>
     </section>
     <section class="card">
+      <div class="card-title">單位</div>
+      <div class="chip-row wrap" id="unitChips"></div>
+      <div class="row">
+        <input id="newUnitInput" class="f-input grow" placeholder="新單位,例如:件">
+        <button class="btn primary" id="btnAddUnit">新增</button>
+      </div>
+    </section>
+    <section class="card">
       <div class="card-title-row">
         <div class="card-title">品項</div>
         <button class="btn primary" id="btnNewItem">＋ 新增品項</button>
@@ -457,7 +465,7 @@ const store={
 };
 
 /* ───────── 常數與初始資料 ───────── */
-const UNITS=['斤','公斤','兩','把','顆','粒','包','袋','盒','箱','支','條','份'];
+const DEFAULT_UNITS=['斤','公斤','兩','把','顆','粒','包','袋','盒','箱','支','條','份'];
 const DEFAULT_CATS=['葉菜類','瓜果根莖','豆製品','菇類海帶','醃漬加工','辛香佐料','肉品','其他'];
 /* 媽媽菜價單 Excel 的完整品項(依原表順序,單位預設「斤」,結算時可換單位,品項管理可修改) */
 const SEED_GROUPS={
@@ -485,6 +493,8 @@ if(!Array.isArray(items)){
 }
 let cats=store.get('vpc_cats');
 if(!Array.isArray(cats)||!cats.length){cats=DEFAULT_CATS.slice();store.set('vpc_cats',cats);}
+let units=store.get('vpc_units');
+if(!Array.isArray(units)||!units.length){units=DEFAULT_UNITS.slice();store.set('vpc_units',units);}
 let bill=store.get('vpc_bill');
 if(!bill||!Array.isArray(bill.lines))bill={customer:'',lines:[],prevDue:0};
 if(typeof bill.prevDue!=='number'||!(bill.prevDue>0))bill.prevDue=0;
@@ -494,6 +504,7 @@ if(!Array.isArray(customers))customers=[];
 
 const saveItems=()=>store.set('vpc_items',items);
 const saveCats=()=>store.set('vpc_cats',cats);
+const saveUnits=()=>store.set('vpc_units',units);
 const saveBill=()=>store.set('vpc_bill',bill);
 const saveCustomers=()=>store.set('vpc_customers',customers);
 
@@ -884,7 +895,7 @@ function openEntry(opt){
   $('#entryName').classList.toggle('hidden',opt.mode!=='manual');
   if(opt.mode==='manual'){$('#entryName').value='';}
   else{$('#entryTitle').textContent=name;}
-  const us=UNITS.includes(unit)?UNITS.slice():[unit].concat(UNITS);
+  const us=units.includes(unit)?units.slice():[unit].concat(units);
   $('#entryUnit').innerHTML=us.map(u=>'<option'+(u===unit?' selected':'')+'>'+esc(u)+'</option>').join('');
   $('#entryOk').textContent=opt.mode==='edit'?'更新':'加入結算';
   renderEntry();
@@ -964,6 +975,11 @@ function renderItemsPage(){
     return '<span class="chip">'+esc(c)+'('+n+')'+
       '<button class="x" data-delcat="'+esc(c)+'">✕</button></span>';
   }).join('');
+  $('#unitChips').innerHTML=units.map(u=>{
+    const n=items.filter(i=>i.unit===u).length;
+    return '<span class="chip">'+esc(u)+(n?'('+n+')':'')+
+      '<button class="x" data-delunit="'+esc(u)+'">✕</button></span>';
+  }).join('');
   const groups=cats.map(c=>{
     const list=items.filter(i=>i.cat===c);
     if(!list.length)return '';
@@ -1014,6 +1030,33 @@ $('#btnAddCat').addEventListener('click',()=>{
   toast('已新增分類');
 });
 
+/* ── 單位管理 ── */
+$('#btnAddUnit').addEventListener('click',()=>{
+  const v=$('#newUnitInput').value.trim();
+  if(!v)return;
+  if(Array.from(v).length>4){toast('單位請簡短一點');return;}
+  if(units.includes(v)){toast('單位已存在');return;}
+  units.push(v);saveUnits();
+  $('#newUnitInput').value='';
+  renderItemsPage();
+  toast('已新增單位「'+v+'」');
+});
+$('#unitChips').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-delunit]');if(!b)return;
+  const u=b.dataset.delunit;
+  if(units.length<=1){toast('至少要留一個單位');return;}
+  const inUse=items.filter(i=>i.unit===u).length;
+  const msg=inUse
+    ?'刪除單位「'+u+'」?\n目前有 '+inUse+' 個品項在用,\n那些品項會保留這個單位,只是不再出現在清單'
+    :'刪除單位「'+u+'」?';
+  const ok=await askConfirm(msg);
+  if(!ok)return;
+  units=units.filter(x=>x!==u);
+  saveUnits();
+  renderItemsPage();
+  toast('已刪除單位');
+});
+
 $('#itemGroups').addEventListener('click',async e=>{
   const ed=e.target.closest('[data-edit]');
   if(ed){openItemForm(ed.dataset.edit);return;}
@@ -1040,8 +1083,8 @@ function openItemForm(id){
   $('#ifName').value=it?it.name:'';
   $('#ifCat').innerHTML=cats.map(c=>'<option'+(it&&it.cat===c?' selected':'')+'>'+esc(c)+'</option>').join('');
   const unit=it?it.unit:'斤';
-  const inList=UNITS.includes(unit);
-  $('#ifUnit').innerHTML=UNITS.map(u=>'<option'+(inList&&u===unit?' selected':'')+'>'+esc(u)+'</option>').join('')
+  const inList=units.includes(unit);
+  $('#ifUnit').innerHTML=units.map(u=>'<option'+(inList&&u===unit?' selected':'')+'>'+esc(u)+'</option>').join('')
     +'<option value="__c"'+(!inList?' selected':'')+'>自訂…</option>';
   $('#ifUnitCustom').classList.toggle('hidden',inList);
   $('#ifUnitCustom').value=inList?'':unit;
@@ -1056,7 +1099,10 @@ $('#ifSave').addEventListener('click',()=>{
   if(!name){toast('請輸入品名');return;}
   const cat=$('#ifCat').value;
   let unit=$('#ifUnit').value;
-  if(unit==='__c')unit=$('#ifUnitCustom').value.trim()||'份';
+  if(unit==='__c'){
+    unit=$('#ifUnitCustom').value.trim()||'份';
+    if(!units.includes(unit)){units.push(unit);saveUnits();}
+  }
   if(editingItemId){
     const it=items.find(i=>i.id===editingItemId);
     if(it){it.name=name;it.cat=cat;it.unit=unit;}
